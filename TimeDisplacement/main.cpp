@@ -146,7 +146,8 @@ Mat getFrameAt(VideoCapture &cap, const int frame) {
 	// return matrix
 	return m;
 }
-bool copyVideoSection(VideoCapture &cap, int id, int startFrame, int endFrame) {
+
+bool copyVideoSection(VideoCapture &cap, int id) {
 	int width = (int)cap.get(CV_CAP_PROP_FRAME_WIDTH);
 	int height = (int)cap.get(CV_CAP_PROP_FRAME_HEIGHT);
 	Size S = Size(width, height);
@@ -154,64 +155,34 @@ bool copyVideoSection(VideoCapture &cap, int id, int startFrame, int endFrame) {
 	// init output video
 	int fourcc = CV_FOURCC('X', '2', '6', '4');
 	int fps = (int)cap.get(CV_CAP_PROP_FPS);
-	VideoWriter outVideo(video_directory + std::to_string(id) +  ".avi", fourcc, fps, S);
-
+	VideoWriter outVideo(video_directory + std::to_string(id) + ".avi", fourcc, fps, S);
 
 	int frame_count = (int)cap.get(CV_CAP_PROP_FRAME_COUNT);
-	if (endFrame > frame_count) {
-		endFrame = frame_count;
-	}
-	if (startFrame > endFrame) {
-		return false;
-	}
 
-
-	cap.set(CV_CAP_PROP_POS_FRAMES, startFrame);
-	for (int i = startFrame; i < endFrame; i++) {
+	cap.set(CV_CAP_PROP_POS_FRAMES, 0);
+	for (int i = 0; i < frame_count; i++) {
 		Mat frame;
 		cap >> frame;
 		outVideo << frame;
 	}
 
-	cout << id << ".avi: " << endFrame - startFrame << " frames" << endl;
-
 	return true;
 }
 
-/* Combine a number of frames together into one output image. */
-void combineFrames(VideoCapture &cap) {
+void introWorker(int id, int length) {
+	VideoCapture cap = VideoCapture(video_directory + std::to_string(id) + ".avi");
+	if (!cap.isOpened()) {
+		return;
+	}
 
-	// useful variables
 	int width = (int)cap.get(CV_CAP_PROP_FRAME_WIDTH);
 	int height = (int)cap.get(CV_CAP_PROP_FRAME_HEIGHT);
 	Size S = Size(width, height);
-	int length = height;
-	int frame_count = (int)cap.get(CV_CAP_PROP_FRAME_COUNT);
 
-	// first thread's copy
-	if (!copyVideoSection(cap, 0, 0, length)) {
-		cout << "Video Write error, id:" << 0 << endl;
-		return;
-	}
-	// second thread can use original
-	// third thread's copy
-	if (!copyVideoSection(cap, 2, frame_count - length - 1, frame_count - 1)) {
-		cout << "Video Write error, id:" << 0 << endl;
-		return;
-	}
-	// TIME: 4.27ms per frame, total: 2 x length x 0.00427s
+	int fourcc = CV_FOURCC('X', '2', '6', '4');
+	int fps = (int)cap.get(CV_CAP_PROP_FPS);
+	VideoWriter outVideo(video_directory + std::to_string(id) + "_out.avi", fourcc, fps, S);
 
-
-	// init output video
-	//int fourcc = CV_FOURCC('X', '2', '6', '4');
-	//int fps = (int)cap.get(CV_CAP_PROP_FPS);
-	//VideoWriter outVideo(video_directory + "Combined.avi", fourcc, fps, S);
-
-
-
-
-	/*
-	cout << "Starting read..." << endl;
 	for (int x = 0; x < length; x++) {
 		cap.set(CV_CAP_PROP_POS_FRAMES, 0);
 		Mat img;
@@ -224,20 +195,22 @@ void combineFrames(VideoCapture &cap) {
 		}
 		outVideo << img;
 	}
-	cout << "Intro Finished." << endl;
-	for (int x = 0; x < frame_count - length; x++) {
-		cap.set(CV_CAP_PROP_POS_FRAMES, x);
-		Mat img;
-		cap >> img;
-
-		for (int i = 0; i < length; i++) {
-			Mat frame;
-			cap >> frame;
-			frame.row(i).copyTo(img.row(i));
-		}
-		outVideo << img;
+}
+void outroWorker(int id, int length, int frame_count) {
+	VideoCapture cap = VideoCapture(video_directory + std::to_string(id) + ".avi");
+	if (!cap.isOpened()) {
+		return;
 	}
-	cout << "Body Finished." << endl;
+
+	int width = (int)cap.get(CV_CAP_PROP_FRAME_WIDTH);
+	int height = (int)cap.get(CV_CAP_PROP_FRAME_HEIGHT);
+	Size S = Size(width, height);
+
+	int fourcc = CV_FOURCC('X', '2', '6', '4');
+	int fps = (int)cap.get(CV_CAP_PROP_FPS);
+	VideoWriter outVideo(video_directory + std::to_string(id) + "_out.avi", fourcc, fps, S);
+
+
 	for (int x = 0; x < length; x++) {
 		cap.set(CV_CAP_PROP_POS_FRAMES, frame_count - 1);
 		Mat img;
@@ -251,7 +224,74 @@ void combineFrames(VideoCapture &cap) {
 		}
 		outVideo << img;
 	}
-	cout << "Outro Finished." << endl;*/
+}
+void bodyWorker(VideoCapture& cap, int length, int frame_count) {
+	int width = (int)cap.get(CV_CAP_PROP_FRAME_WIDTH);
+	int height = (int)cap.get(CV_CAP_PROP_FRAME_HEIGHT);
+	Size S = Size(width, height);
+
+	int fourcc = CV_FOURCC('X', '2', '6', '4');
+	int fps = (int)cap.get(CV_CAP_PROP_FPS);
+	VideoWriter outVideo(video_directory + "2_out.avi", fourcc, fps, S);
+
+	Mat img;
+	Mat frame;
+	for (int x = 0; x < frame_count - length; x++) {
+		cap.set(CV_CAP_PROP_POS_FRAMES, x);
+		cap >> img;
+
+		for (int i = 0; i < length; i++) {
+			cap >> frame;
+			//frame.row(i).copyTo(img.row(i));
+		}
+		outVideo << img;
+	}
+}
+
+
+/* Combine a number of frames together into one output image. */
+void combineFrames(VideoCapture &cap) {
+
+	// useful variables
+	int width = (int)cap.get(CV_CAP_PROP_FRAME_WIDTH);
+	int height = (int)cap.get(CV_CAP_PROP_FRAME_HEIGHT);
+	Size S = Size(width, height);
+	int length = height;
+	int frame_count = (int)cap.get(CV_CAP_PROP_FRAME_COUNT);
+
+
+	// parallel video writing
+	std::thread threads[3];
+
+	// intro thread
+	if (!copyVideoSection(cap, 0)) {
+		cout << "Video Write error, id:" << 0 << endl;
+		return;
+	}
+	threads[0] = std::thread(introWorker, 0, length);
+	
+
+	// outro thread
+	if (!copyVideoSection(cap, 1)) {
+		cout << "Video Write error, id:" << 1 << endl;
+		return;
+	}
+	threads[1] = std::thread(outroWorker, 1, length, frame_count);
+
+	// body thread
+	threads[2] = std::thread(bodyWorker, cap, length, frame_count);
+
+	for (auto& th : threads) {
+		th.join();
+	}
+
+
+	// init output video
+	//int fourcc = CV_FOURCC('X', '2', '6', '4');
+	//int fps = (int)cap.get(CV_CAP_PROP_FPS);
+	//VideoWriter outVideo(video_directory + "Combined.avi", fourcc, fps, S);
+
+
 }
 
 int main() {
@@ -274,7 +314,7 @@ int main() {
 
 
 	time_t time = clock(); // -------------- TIMING START
-	int runs = 10;
+	int runs = 3;
 	for (int i = 0; i < runs; i++) {
 		combineFrames(cap);
 		cout << "Run " << i << " completed." << endl;
