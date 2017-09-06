@@ -146,7 +146,37 @@ Mat getFrameAt(VideoCapture &cap, const int frame) {
 	// return matrix
 	return m;
 }
+bool copyVideoSection(VideoCapture &cap, int id, int startFrame, int endFrame) {
+	int width = (int)cap.get(CV_CAP_PROP_FRAME_WIDTH);
+	int height = (int)cap.get(CV_CAP_PROP_FRAME_HEIGHT);
+	Size S = Size(width, height);
 
+	// init output video
+	int fourcc = CV_FOURCC('X', '2', '6', '4');
+	int fps = (int)cap.get(CV_CAP_PROP_FPS);
+	VideoWriter outVideo(video_directory + std::to_string(id) +  ".avi", fourcc, fps, S);
+
+
+	int frame_count = (int)cap.get(CV_CAP_PROP_FRAME_COUNT);
+	if (endFrame > frame_count) {
+		endFrame = frame_count;
+	}
+	if (startFrame > endFrame) {
+		return false;
+	}
+
+
+	cap.set(CV_CAP_PROP_POS_FRAMES, startFrame);
+	for (int i = startFrame; i < endFrame; i++) {
+		Mat frame;
+		cap >> frame;
+		outVideo << frame;
+	}
+
+	cout << id << ".avi: " << endFrame - startFrame << " frames" << endl;
+
+	return true;
+}
 
 /* Combine a number of frames together into one output image. */
 void combineFrames(VideoCapture &cap) {
@@ -158,11 +188,29 @@ void combineFrames(VideoCapture &cap) {
 	int length = height;
 	int frame_count = (int)cap.get(CV_CAP_PROP_FRAME_COUNT);
 
-	// init output video
-	int fourcc = CV_FOURCC('X', '2', '6', '4');
-	int fps = (int)cap.get(CV_CAP_PROP_FPS);
-	VideoWriter outVideo(video_directory + "Combined.avi", fourcc, fps, S);
+	// first thread's copy
+	if (!copyVideoSection(cap, 0, 0, length)) {
+		cout << "Video Write error, id:" << 0 << endl;
+		return;
+	}
+	// second thread can use original
+	// third thread's copy
+	if (!copyVideoSection(cap, 2, frame_count - length - 1, frame_count - 1)) {
+		cout << "Video Write error, id:" << 0 << endl;
+		return;
+	}
+	// TIME: 4.27ms per frame, total: 2 x length x 0.00427s
 
+
+	// init output video
+	//int fourcc = CV_FOURCC('X', '2', '6', '4');
+	//int fps = (int)cap.get(CV_CAP_PROP_FPS);
+	//VideoWriter outVideo(video_directory + "Combined.avi", fourcc, fps, S);
+
+
+
+
+	/*
 	cout << "Starting read..." << endl;
 	for (int x = 0; x < length; x++) {
 		cap.set(CV_CAP_PROP_POS_FRAMES, 0);
@@ -203,7 +251,7 @@ void combineFrames(VideoCapture &cap) {
 		}
 		outVideo << img;
 	}
-	cout << "Outro Finished." << endl;
+	cout << "Outro Finished." << endl;*/
 }
 
 int main() {
@@ -226,7 +274,7 @@ int main() {
 
 
 	time_t time = clock(); // -------------- TIMING START
-	int runs = 1;
+	int runs = 10;
 	for (int i = 0; i < runs; i++) {
 		combineFrames(cap);
 		cout << "Run " << i << " completed." << endl;
